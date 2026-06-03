@@ -1,6 +1,6 @@
 //========================================================================
 // FILE:
-//    LVN.cpp 
+//    LVN.cpp
 //
 // DESCRIPTION:
 //    This pass implements a simple Local Value Numbering (LVN) optimization
@@ -59,7 +59,7 @@
 using namespace llvm;
 namespace {
 struct LVN : PassInfoMixin<LVN> {
-  std::optional<int>
+  std::optional<long>
   getValue(Value *operand,
            std::unordered_map<std::basic_string<char>, int> constantmap) {
     // this is a simple method , given a value , it checks if its a constant
@@ -159,7 +159,7 @@ struct LVN : PassInfoMixin<LVN> {
     errs() << "Constant propogation / folding on Function : " << F->getName()
            << "\n";
     for (auto BB = F->begin(), eBB = F->end(); BB != eBB; BB++) {
-      std::unordered_map<std::basic_string<char>, int> constantmap;
+      std::unordered_map<std::basic_string<char>, long> constantmap;
       for (auto inst = BB->begin(), eInst = BB->end(); inst != eInst;) {
         bool del = false;
         if (auto op = dyn_cast<BinaryOperator>(inst)) {
@@ -168,7 +168,7 @@ struct LVN : PassInfoMixin<LVN> {
                                           // inside the constant map
           auto r = getValue(op->getOperand(1), constantmap);
           if (l && r) {
-            int result = 0;
+            long result = 0;
             if (op->getOpcode() == Instruction::Add) {
               result = *l + *r;
             } else if (op->getOpcode() == Instruction::Sub) {
@@ -176,9 +176,15 @@ struct LVN : PassInfoMixin<LVN> {
             } else if (op->getOpcode() == Instruction::Mul) {
               result = *l * *r;
             } else if (op->getOpcode() == Instruction::SDiv) {
-              result = *l / *r;
+              if (*r != 0)
+                result = *l / *r;
+              else
+                errs() << "warning division by 0\n";
             } else if (op->getOpcode() == Instruction::SRem) {
-              result = *l % *r;
+              if (*r != 0)
+                result = *l % *r;
+              else
+                errs() << "warning division by 0\n";
             }
             // if both are constants then they can be folded
             auto value = ConstantInt::get(op->getType(), result);
@@ -191,15 +197,6 @@ struct LVN : PassInfoMixin<LVN> {
           if (auto val = dyn_cast<ConstantInt>(op->getOperand(0))) {
             constantmap.insert(
                 {op->getOperand(1)->getNameOrAsOperand(), val->getSExtValue()});
-            // errs() << "Erased Dead Store : " << *inst
-            //      << " Replaced with Constant : " << val->getSExtValue()
-            //    << "\n";
-            // op->replaceAllUsesWith(ConstantInt::get(
-            // op->getType(),
-            // val->getSExtValue())); // we eliminate redundant stores by
-            //  replacing all the values in the
-            //  upcoming blocks
-            // del = true;
           }
         } else if (auto op = dyn_cast<LoadInst>(inst)) {
           auto item = constantmap.find(op->getOperand(0)->getNameOrAsOperand());
