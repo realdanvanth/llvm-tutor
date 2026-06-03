@@ -22,10 +22,6 @@
 //         Previously computed expressions are detected using value numbering.
 //         Repeated computations are replaced with the already computed value.
 //
-//      4. Dead Alloca Elimination
-//         Unused stack allocations introduced during earlier transformations
-//         are removed from the function.
-//
 //    The pass uses a hash-based value numbering scheme where expressions are
 //    represented as tuples consisting of:
 //
@@ -61,13 +57,12 @@ namespace {
 struct LVN : PassInfoMixin<LVN> {
   std::optional<long>
   getValue(Value *operand,
-           std::unordered_map<std::basic_string<char>, int> constantmap) {
+           std::unordered_map<std::basic_string<char>, long> constantmap) {
     // this is a simple method , given a value , it checks if its a constant
     //  ie if the operands are constants or either if they were folded earlier
     //  and now have a constant entry
     if (auto val = dyn_cast<ConstantInt>(operand)) {
-      int n = val->getSExtValue();
-      return n;
+      return val->getSExtValue();
     }
     auto val = constantmap.find(operand->getNameOrAsOperand());
     if (val != constantmap.end()) {
@@ -118,38 +113,6 @@ struct LVN : PassInfoMixin<LVN> {
       }
     }
   }
-  void eliminateDeadAllocs(Function *F) {
-    // a simple metho to check if the alloca instruction is used anywhere in the
-    // function
-    // if it is unused, we delete it , this is required after Common Sub
-    // Expression Elimination
-    // and constant propogation since there maybe dead alloca , test it without
-    // this function to play with it
-    errs() << "................................................................"
-              "..................\n";
-    errs() << "Running Dead Alloc Elimination on Function : " << F->getName()
-           << "\n";
-    std::unordered_map<std::string, Instruction *> map;
-    for (auto BB = F->begin(), eBB = F->end(); BB != eBB; BB++) {
-      for (auto inst = BB->begin(), einst = BB->end(); inst != einst; inst++) {
-        if (auto op = dyn_cast<AllocaInst>(inst)) {
-          // errs() << "  " << *inst << "  " << op->getName() << "\n";
-          std::string a = op->getNameOrAsOperand();
-          map.insert({a, &*inst});
-        }
-        if (auto op = dyn_cast<StoreInst>(inst)) {
-          map.erase(op->getOperand(1)->getNameOrAsOperand());
-        }
-      }
-    }
-    for (auto deadstore = map.begin(), e = map.end(); deadstore != e;) {
-      errs() << "Erased Dead Alloc : " << *deadstore->second << "\n";
-      auto next = std::next(deadstore);
-      deadstore->second->eraseFromParent();
-      deadstore = next;
-    }
-  }
-
   void constantPropogation(Function *F) {
     // here constant map stores if the value is constant
     // it stores the ssa value example %3 and the integer value for it
@@ -266,7 +229,6 @@ struct LVN : PassInfoMixin<LVN> {
         }
       }
     }
-    eliminateDeadAllocs(&F);
     return PreservedAnalyses::all();
   }
 };
